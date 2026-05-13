@@ -245,6 +245,31 @@
       : '📷 Вибрати фото';
   });
 
+  // ─── Пошук існуючої відкритої угоди по номеру тягача ─────────────────────────
+  async function findOpenDeal(truckNum) {
+    const result = await apiCall('crm.deal.list', {
+      filter: {
+        CATEGORY_ID,
+        CLOSED: 'N',
+        [UF_TRUCK]: truckNum,
+      },
+      select: ['ID', 'TITLE', UF_DRIVER, UF_DESC],
+      order: { DATE_CREATE: 'DESC' },
+    });
+    return result && result.length > 0 ? result[0] : null;
+  }
+
+  // ─── Коментар в таймлайн угоди ───────────────────────────────────────────────
+  async function addComment(dealId, text) {
+    await apiCall('crm.timeline.comment.add', {
+      fields: {
+        ENTITY_TYPE: 'deal',
+        ENTITY_ID: dealId,
+        COMMENT: text,
+      }
+    });
+  }
+
   // ─── Відправка форми ──────────────────────────────────────────────────────────
   document.getElementById('repairForm').addEventListener('submit', async function (e) {
     e.preventDefault();
@@ -261,39 +286,78 @@
     if (!description) { setStatus('error', 'Опишіть проблему.'); return; }
 
     btn.disabled = true;
-    setStatus('loading', 'Створюємо заявку...');
+    setStatus('loading', 'Шукаємо існуючу заявку...');
     setProgress(10);
 
     try {
-      // 1. Створюємо угоду в Bitrix24
-      const title = `${truckNum} — ${driverName}`;
-      const dealId = await apiCall('crm.deal.add', {
-        fields: {
-          TITLE:       title,
-          CATEGORY_ID,
-          STAGE_ID,
-          TYPE_ID:     '1',
-          [UF_DRIVER]:  driverName,
-          [UF_TRUCK]:   truckNum,
-          [UF_TRAILER]: trailerNum,
-          [UF_DESC]:    description,
-        }
-      });
+      const now = new Date().toLocaleString('uk-UA');
+      let dealId;
+      let isNew = false;
+
+      // 1. Шукаємо відкриту угоду по номеру тягача
+      const existing = await findOpenDeal(truckNum);
+
+      if (existing) {
+        dealId = existing.ID;
+        setProgress(25);
+        setStatus('loading', `Знайдено заявку #${dealId}. Оновлюємо...`);
+
+        // Оновлюємо поля угоди
+        await apiCall('crm.deal.update', {
+          id: dealId,
+          fields: {
+            [UF_DRIVER]:  driverName,
+            [UF_TRAILER]: trailerNum,
+            [UF_DESC]:    description,
+          }
+        });
+
+        await addComment(dealId,
+          `📝 Оновлено водієм ${driverName} [${now}]\n` +
+          `Тягач: ${truckNum}` + (trailerNum ? ` / Причіп: ${trailerNum}` : '') + `\n` +
+          `Опис: ${description}` +
+          (files.length > 0 ? `\nДодано фото: ${files.length} шт.` : '')
+        );
+      } else {
+        // 2. Створюємо нову угоду
+        setStatus('loading', 'Створюємо нову заявку...');
+        const title = `${truckNum} — ${driverName}`;
+        dealId = await apiCall('crm.deal.add', {
+          fields: {
+            TITLE:       title,
+            CATEGORY_ID,
+            STAGE_ID,
+            TYPE_ID:     '1',
+            [UF_DRIVER]:  driverName,
+            [UF_TRUCK]:   truckNum,
+            [UF_TRAILER]: trailerNum,
+            [UF_DESC]:    description,
+          }
+        });
+        isNew = true;
+
+        await addComment(dealId,
+          `🆕 Нову заявку створено водієм ${driverName} [${now}]\n` +
+          `Тягач: ${truckNum}` + (trailerNum ? ` / Причіп: ${trailerNum}` : '') + `\n` +
+          `Опис: ${description}` +
+          (files.length > 0 ? `\nФото: ${files.length} шт.` : '')
+        );
+      }
 
       setProgress(40);
-      setStatus('loading', `Заявку створено (#${dealId}). Завантажуємо фото...`);
+      setStatus('loading', `Заявка #${dealId}. Завантажуємо фото...`);
 
-      // 2. Якщо є фото — відправляємо через проксі
+      // 3. Якщо є фото — відправляємо через проксі
       if (files.length > 0) {
         const fileDataList = [];
         for (let i = 0; i < files.length; i++) {
-          setProgress(40 + Math.round((i / files.length) * 35));
+          setProgress(40 + Math.round((i / files.length) * 45));
           setStatus('loading', `Підготовка фото ${i + 1} з ${files.length}...`);
           const base64 = await fileToBase64(files[i]);
           fileDataList.push({ name: files[i].name, base64 });
         }
 
-        setProgress(78);
+        setProgress(88);
         setStatus('loading', 'Зберігаємо фото...');
 
         const proxyRes = await fetch(PROXY_URL, {
@@ -306,7 +370,10 @@
       }
 
       setProgress(100);
-      setStatus('success', `✅ Заявку надіслано! Технічна служба незабаром зв'яжеться з вами.`);
+      const msg = isNew
+        ? `✅ Нову заявку #${dealId} створено! Технічна служба незабаром зв'яжеться з вами.`
+        : `✅ Заявку #${dealId} оновлено! Дані та фото додано до існуючої заявки.`;
+      setStatus('success', msg);
 
       // Скидаємо форму
       document.getElementById('repairForm').reset();
