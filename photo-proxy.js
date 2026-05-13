@@ -14,7 +14,7 @@ const PORT        = 5003;
 const MAX_BODY_MB = 150;
 const FOLDER_ROOT = 'ATP-Tech-Photos';
 const CACHE_PATH  = path.join(__dirname, 'tech-disk-cache.json');
-const PHOTO_FIELD = 'UF_CRM_1961';
+const PHOTO_FIELD = 'UF_CRM_TECH_PHOTO';
 
 // ── Bitrix24 REST ─────────────────────────────────────────────────────────────
 async function bx(method, params) {
