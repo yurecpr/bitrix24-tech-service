@@ -213,6 +213,23 @@
     return data.result;
   }
 
+  // ─── Авто-капс + латиниця→кирилиця для номерів авто ─────────────────────────
+  const latinToCyr = s => s.replace(/[AaBbCcEeHhIiKkMmOoPpTtXxYy]/g, c => ({
+    'A':'А','a':'А','B':'В','b':'В','C':'С','c':'С','E':'Е','e':'Е',
+    'H':'Н','h':'Н','I':'І','i':'І','K':'К','k':'К','M':'М','m':'М',
+    'O':'О','o':'О','P':'Р','p':'Р','T':'Т','t':'Т','X':'Х','x':'Х',
+    'Y':'У','y':'У'
+  }[c] || c));
+
+  ['truckNum', 'trailerNum'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', function () {
+      const pos = this.selectionStart;
+      this.value = latinToCyr(this.value).toUpperCase();
+      this.setSelectionRange(pos, pos);
+    });
+  });
+
   // ─── Попередній перегляд фото ─────────────────────────────────────────────────
   document.getElementById('photos').addEventListener('change', function () {
     const grid = document.getElementById('previewGrid');
