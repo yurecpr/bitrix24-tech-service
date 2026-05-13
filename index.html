@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Технічна служба — Заявка на ремонт</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px 16px 40px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 480px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 20px;
+    }
+    .field { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    input[type=text], textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 16px;
+      color: #333;
+      background: #fafafa;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    input[type=text]:focus, textarea:focus {
+      border-color: #e53935;
+      background: #fff;
+    }
+    textarea { resize: vertical; min-height: 100px; }
+    .hint { font-size: 12px; color: #999; margin-top: 4px; }
+    input[type=file] { display: none; }
+    .file-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px;
+      background: #f5f5f5;
+      border: 2px dashed #ccc;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      color: #555;
+      width: 100%;
+      justify-content: center;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .file-label:hover { border-color: #e53935; background: #fff5f5; color: #e53935; }
+    #previewGrid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #previewGrid img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 2px solid #eee;
+    }
+    button {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, #e53935, #c62828);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.2s;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    #progressWrap {
+      display: none;
+      height: 6px;
+      background: #eee;
+      border-radius: 3px;
+      margin-top: 14px;
+      overflow: hidden;
+    }
+    #progressBar {
+      height: 100%;
+      background: linear-gradient(90deg, #e53935, #c62828);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 500;
+      display: none;
+    }
+    .status.loading { display: block; background: #e3f2fd; color: #1565c0; }
+    .status.success { display: block; background: #e8f5e9; color: #2e7d32; }
+    .status.error   { display: block; background: #ffebee; color: #c62828; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🔧 Заявка на ремонт</h1>
+
+  <form id="repairForm">
+    <div class="field">
+      <label for="driverName">ПІБ водія *</label>
+      <input type="text" id="driverName" placeholder="Іваненко Іван Іванович" required>
+    </div>
+
+    <div class="field">
+      <label for="truckNum">Номер тягача *</label>
+      <input type="text" id="truckNum" placeholder="АА0000АА" required>
+    </div>
+
+    <div class="field">
+      <label for="trailerNum">Номер напівпричепа</label>
+      <input type="text" id="trailerNum" placeholder="АА0000АА">
+    </div>
+
+    <div class="field">
+      <label for="description">Опис проблеми *</label>
+      <textarea id="description" placeholder="Опишіть несправність якомога детальніше..." required></textarea>
+    </div>
+
+    <div class="field">
+      <label>Фото (необов'язково)</label>
+      <label class="file-label" for="photos">
+        📷 Вибрати фото
+      </label>
+      <input type="file" id="photos" accept="image/*" multiple>
+      <p class="hint">Сфотографуйте несправність</p>
+      <div id="previewGrid"></div>
+    </div>
+
+    <button type="submit" id="submitBtn">Надіслати заявку</button>
+    <div id="progressWrap"><div id="progressBar"></div></div>
+    <div class="status" id="statusMsg"></div>
+  </form>
+</div>
+
+<script>
+  // ─── Конфіг ──────────────────────────────────────────────────────────────────
+  const WEBHOOK_URL  = 'https://atp.bitrix24.eu/rest/141/k8sfskkzu9y2zg1g/';
+  const CATEGORY_ID  = 19;
+  const STAGE_ID     = 'C19:NEW';
+  const PROXY_URL    = 'https://630393-vds-atp16363.tech.gmhost.pp.ua/tech-proxy/upload-photos';
+
+  const UF_DRIVER  = 'UF_CRM_1953';
+  const UF_TRUCK   = 'UF_CRM_1955';
+  const UF_TRAILER = 'UF_CRM_1957';
+  const UF_DESC    = 'UF_CRM_1959';
+  const UF_PHOTO   = 'UF_CRM_1961';
+
+  // ─── Утиліти ─────────────────────────────────────────────────────────────────
+  function setStatus(type, text) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status ${type}`;
+    el.textContent = text;
+  }
+
+  function setProgress(pct) {
+    document.getElementById('progressWrap').style.display = 'block';
+    document.getElementById('progressBar').style.width = pct + '%';
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function apiCall(method, params) {
+    const res = await fetch(`${WEBHOOK_URL}${method}.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error_description || data.error);
+    return data.result;
+  }
+
+  // ─── Попередній перегляд фото ─────────────────────────────────────────────────
+  document.getElementById('photos').addEventListener('change', function () {
+    const grid = document.getElementById('previewGrid');
+    grid.innerHTML = '';
+    for (const file of this.files) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(file);
+      grid.appendChild(img);
+    }
+    const label = document.querySelector('.file-label');
+    label.textContent = this.files.length > 0
+      ? `📷 Вибрано: ${this.files.length} фото`
+      : '📷 Вибрати фото';
+  });
+
+  // ─── Відправка форми ──────────────────────────────────────────────────────────
+  document.getElementById('repairForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const btn         = document.getElementById('submitBtn');
+    const driverName  = document.getElementById('driverName').value.trim();
+    const truckNum    = document.getElementById('truckNum').value.trim();
+    const trailerNum  = document.getElementById('trailerNum').value.trim();
+    const description = document.getElementById('description').value.trim();
+    const files       = document.getElementById('photos').files;
+
+    if (!driverName)  { setStatus('error', 'Введіть ПІБ водія.'); return; }
+    if (!truckNum)    { setStatus('error', 'Введіть номер тягача.'); return; }
+    if (!description) { setStatus('error', 'Опишіть проблему.'); return; }
+
+    btn.disabled = true;
+    setStatus('loading', 'Створюємо заявку...');
+    setProgress(10);
+
+    try {
+      // 1. Створюємо угоду в Bitrix24
+      const title = `${truckNum} — ${driverName}`;
+      const dealId = await apiCall('crm.deal.add', {
+        fields: {
+          TITLE:       title,
+          CATEGORY_ID,
+          STAGE_ID,
+          TYPE_ID:     '1',
+          [UF_DRIVER]:  driverName,
+          [UF_TRUCK]:   truckNum,
+          [UF_TRAILER]: trailerNum,
+          [UF_DESC]:    description,
+        }
+      });
+
+      setProgress(40);
+      setStatus('loading', `Заявку створено (#${dealId}). Завантажуємо фото...`);
+
+      // 2. Якщо є фото — відправляємо через проксі
+      if (files.length > 0) {
+        const fileDataList = [];
+        for (let i = 0; i < files.length; i++) {
+          setProgress(40 + Math.round((i / files.length) * 35));
+          setStatus('loading', `Підготовка фото ${i + 1} з ${files.length}...`);
+          const base64 = await fileToBase64(files[i]);
+          fileDataList.push({ name: files[i].name, base64 });
+        }
+
+        setProgress(78);
+        setStatus('loading', 'Зберігаємо фото...');
+
+        const proxyRes = await fetch(PROXY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId, files: fileDataList }),
+        });
+        const proxyData = await proxyRes.json();
+        if (!proxyRes.ok) throw new Error(proxyData.error || `Proxy error ${proxyRes.status}`);
+      }
+
+      setProgress(100);
+      setStatus('success', `✅ Заявку надіслано! Технічна служба незабаром зв'яжеться з вами.`);
+
+      // Скидаємо форму
+      document.getElementById('repairForm').reset();
+      document.getElementById('previewGrid').innerHTML = '';
+      document.querySelector('.file-label').textContent = '📷 Вибрати фото';
+
+    } catch (err) {
+      console.error(err);
+      const m = err.message || '';
+      let userMsg;
+      if (m.includes('not valid JSON') || m.includes('Unexpected token')) {
+        userMsg = '❌ Помилка з\'єднання з сервером. Перевірте інтернет і спробуйте ще раз.';
+      } else if (m.includes('Failed to fetch') || m.includes('NetworkError')) {
+        userMsg = '❌ Немає з\'єднання з інтернетом. Перевірте мережу і спробуйте ще раз.';
+      } else {
+        userMsg = '❌ Щось пішло не так. Спробуйте ще раз або зверніться до диспетчера.';
+      }
+      setStatus('error', userMsg);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
