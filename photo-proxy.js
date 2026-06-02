@@ -9,7 +9,17 @@ const fs     = require('fs');
 const path   = require('path');
 const crypto = require('crypto');
 
-const WEBHOOK_URL = 'https://atp.bitrix24.eu/rest/141/k8sfskkzu9y2zg1g/';
+// Завантажуємо .env вручну (без зовнішніх залежностей)
+try {
+  const envFile = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+  for (const line of envFile.split('\n')) {
+    const [k, ...v] = line.split('=');
+    if (k && v.length) process.env[k.trim()] = v.join('=').trim();
+  }
+} catch {}
+
+const WEBHOOK_URL = process.env.BITRIX_WEBHOOK || '';
+if (!WEBHOOK_URL) { console.error('[ERROR] BITRIX_WEBHOOK not set in .env'); process.exit(1); }
 const PORT        = 5003;
 const MAX_BODY_MB = 150;
 const FOLDER_ROOT = 'ATP-Tech-Photos';
@@ -120,6 +130,25 @@ const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+
+  // Генеричний проксі Bitrix24 API
+  if (req.method === 'POST' && req.url === '/api') {
+    const chunks2 = []; let sz2 = 0;
+    req.on('data', c => { sz2 += c.length; if (sz2 < 1024*1024) chunks2.push(c); });
+    req.on('end', async () => {
+      try {
+        const { method, params } = JSON.parse(Buffer.concat(chunks2).toString());
+        if (!method) throw new Error('Missing method');
+        const r = await bx(method, params || {});
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ result: r }));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
 
   if (req.method !== 'POST' || req.url !== '/upload-photos') {
     res.writeHead(404, { 'Content-Type': 'application/json' });

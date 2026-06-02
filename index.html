@@ -191,6 +191,7 @@
   const CATEGORY_ID  = 19;
   const STAGE_ID     = 'C19:NEW';
   const PROXY_URL    = 'https://630393-vds-atp16363.tech.gmhost.pp.ua/tech-proxy/upload-photos';
+  const API_URL      = 'https://630393-vds-atp16363.tech.gmhost.pp.ua/tech-proxy/api';
 
   const UF_DRIVER  = 'UF_CRM_DRIVER';
   const UF_TRUCK   = 'UF_CRM_TRUCK';
@@ -220,13 +221,14 @@
   }
 
   async function apiCall(method, params) {
-    const res = await fetch(`${WEBHOOK_URL}${method}.json`, {
+    const res = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ method, params })
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (data.error) throw new Error(data.error_description || data.error);
+    if (data.error) throw new Error(data.error);
     return data.result;
   }
 
